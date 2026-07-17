@@ -1,0 +1,219 @@
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#0b0608" />
+<meta name="description" content="CaYaSound — tarayıcıda çalışan ses düzenleyici. Sol/sağ kanal düzenleme, kanal kopyalama, bas artırma, kırpma ve WAV dışa aktarma." />
+<title>CaYaSound · Ses Düzenleyici</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="css/style.css" />
+
+<!-- ============================= TOP BAR ============================= -->
+<header class="topbar">
+  <a class="brand" href="https://cayadev.com" title="cayadev.com">
+    <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+      <rect x="2"  y="15" width="4" height="10" rx="1.5" />
+      <rect x="9"  y="9"  width="4" height="22" rx="1.5" />
+      <rect x="16" y="4"  width="4" height="32" rx="1.5" />
+      <rect x="23" y="11" width="4" height="18" rx="1.5" />
+      <rect x="30" y="6"  width="4" height="28" rx="1.5" />
+    </svg>
+    <span class="brand-text"><b>CaYa</b>Sound</span>
+    <span class="brand-tag">Ses Düzenleyici</span>
+  </a>
+
+  <div class="toolbar">
+    <button id="btnOpen" class="btn btn-primary" title="Ses dosyası aç (O)">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M4 5h5l2 2h9v11H4z"/></svg>
+      Aç
+    </button>
+    <div class="divider"></div>
+    <button id="btnUndo" class="btn" disabled title="Geri al (Ctrl+Z)">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3"/></svg>
+      Geri Al
+    </button>
+    <button id="btnRedo" class="btn" disabled title="Yinele (Ctrl+Y)">
+      <svg viewBox="0 0 24 24" class="ico"><path d="m15 7 5 5-5 5M20 12H9a5 5 0 0 0 0 10h3"/></svg>
+      Yinele
+    </button>
+    <div class="divider"></div>
+    <select id="fmtSelect" class="select" title="Dışa aktarma biçimi">
+      <option value="16">WAV · 16-bit</option>
+      <option value="32">WAV · 32-bit float</option>
+    </select>
+    <button id="btnExport" class="btn btn-green" disabled title="Dışa aktar (Ctrl+S)">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+      Dışa Aktar
+    </button>
+  </div>
+</header>
+
+<!-- ============================= MAIN ============================= -->
+<main class="workspace">
+  <!-- Editor -->
+  <section class="editor">
+    <!-- Transport -->
+    <div class="transport">
+      <div class="transport-left">
+        <button id="btnStart" class="tbtn" disabled title="Başa dön (Home)">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M6 5v14M19 5 9 12l10 7z"/></svg>
+        </button>
+        <button id="btnPlay" class="tbtn tbtn-play" disabled title="Oynat / Duraklat (Boşluk)">
+          <svg viewBox="0 0 24 24" class="ico ico-play"><path d="M7 4v16l13-8z"/></svg>
+          <svg viewBox="0 0 24 24" class="ico ico-pause"><path d="M7 4h4v16H7zM13 4h4v16h-4z"/></svg>
+        </button>
+        <button id="btnStop" class="tbtn" disabled title="Durdur">
+          <svg viewBox="0 0 24 24" class="ico"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+        </button>
+        <div class="time-readout">
+          <span id="timeCur">00:00.000</span>
+          <span class="time-sep">/</span>
+          <span id="timeDur">00:00.000</span>
+        </div>
+      </div>
+
+      <div class="transport-right">
+        <div class="vol">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M4 9v6h4l5 4V5L8 9zM16 8a5 5 0 0 1 0 8"/></svg>
+          <input id="volSlider" class="range range-slim" type="range" min="0" max="150" value="100" title="Dinleme sesi" />
+          <span id="volVal" class="mono-sm">100%</span>
+        </div>
+        <div class="divider"></div>
+        <button id="btnZoomOut" class="tbtn" disabled title="Uzaklaş">
+          <svg viewBox="0 0 24 24" class="ico"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M21 21l-4.3-4.3"/></svg>
+        </button>
+        <button id="btnZoomFit" class="tbtn tbtn-wide" disabled title="Sığdır">Sığdır</button>
+        <button id="btnZoomIn" class="tbtn" disabled title="Yakınlaş">
+          <svg viewBox="0 0 24 24" class="ico"><circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M21 21l-4.3-4.3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Waveform -->
+    <div id="waveWrap" class="wave-wrap">
+      <div id="waveScroll" class="wave-scroll">
+        <canvas id="ruler" class="ruler"></canvas>
+        <div id="channels" class="channels">
+          <div class="channel">
+            <span class="ch-label">SOL · L</span>
+            <canvas id="waveL" class="wave"></canvas>
+          </div>
+          <div class="channel">
+            <span class="ch-label">SAĞ · R</span>
+            <canvas id="waveR" class="wave"></canvas>
+          </div>
+          <canvas id="overlay" class="overlay"></canvas>
+        </div>
+      </div>
+
+      <div id="hbar" class="hbar">
+        <div id="hbarThumb" class="hbar-thumb"></div>
+      </div>
+
+      <!-- Empty state / dropzone -->
+      <div id="dropzone" class="dropzone">
+        <div class="dz-inner">
+          <svg viewBox="0 0 24 24" class="dz-ico"><path d="M12 16V4m0 0 5 5m-5-5-5 5M4 20h16"/></svg>
+          <h2>Ses dosyasını buraya bırak</h2>
+          <p>WAV · MP3 · FLAC · OGG · M4A — ya da bilgisayardan seç</p>
+          <button id="dzOpen" class="btn btn-primary btn-lg">Dosya Seç</button>
+          <p class="dz-hint">Her şey tarayıcında işlenir · dosyaların hiçbir yere yüklenmez</p>
+        </div>
+      </div>
+
+      <!-- Busy overlay -->
+      <div id="busy" class="busy" hidden>
+        <div class="spinner"></div>
+        <span id="busyText">İşleniyor…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tool panel -->
+  <aside class="panel">
+    <div class="panel-scroll">
+
+      <section class="tool-group">
+        <h3 class="tg-title">Seçim</h3>
+        <p class="tg-hint">Dalga üzerinde sürükleyerek bir bölge seç.</p>
+        <div class="btn-grid">
+          <button class="btn tool" data-act="selectAll" disabled>Tümünü Seç</button>
+          <button class="btn tool" data-act="selectNone" disabled>Seçimi Kaldır</button>
+          <button class="btn tool" data-act="trim" disabled>Seçime Kırp</button>
+          <button class="btn tool" data-act="delete" disabled>Seçimi Sil</button>
+          <button class="btn tool" data-act="silence" disabled>Sustur</button>
+          <button class="btn tool" data-act="reverse" disabled>Ters Çevir</button>
+          <button class="btn tool" data-act="fadeIn" disabled>Fade In</button>
+          <button class="btn tool" data-act="fadeOut" disabled>Fade Out</button>
+        </div>
+      </section>
+
+      <section class="tool-group">
+        <h3 class="tg-title">Kanallar</h3>
+        <p class="tg-hint">Sol/sağ kanal işlemleri (tüm klip).</p>
+        <div class="btn-grid">
+          <button class="btn tool" data-act="copyLR" disabled>Sol → Sağ Kopyala</button>
+          <button class="btn tool" data-act="copyRL" disabled>Sağ → Sol Kopyala</button>
+          <button class="btn tool" data-act="swap" disabled>Kanalları Değiştir</button>
+          <button class="btn tool" data-act="mono" disabled>Mono Yap</button>
+          <button class="btn tool" data-act="muteL" disabled>Sol Kanalı Kapat</button>
+          <button class="btn tool" data-act="muteR" disabled>Sağ Kanalı Kapat</button>
+        </div>
+      </section>
+
+      <section class="tool-group">
+        <h3 class="tg-title">Efektler</h3>
+
+        <div class="fx-row">
+          <label>Bas <span id="bassVal" class="mono-sm">+0 dB</span></label>
+          <input id="bassRange" class="range" type="range" min="-15" max="15" value="6" step="1" disabled />
+          <button class="btn tool fx-apply" data-act="bass" disabled>Bası Uygula</button>
+        </div>
+
+        <div class="fx-row">
+          <label>Tiz <span id="trebleVal" class="mono-sm">+0 dB</span></label>
+          <input id="trebleRange" class="range" type="range" min="-15" max="15" value="4" step="1" disabled />
+          <button class="btn tool fx-apply" data-act="treble" disabled>Tizi Uygula</button>
+        </div>
+
+        <div class="fx-row">
+          <label>Kazanç <span id="ampVal" class="mono-sm">+0 dB</span></label>
+          <input id="ampRange" class="range" type="range" min="-24" max="24" value="3" step="1" disabled />
+          <button class="btn tool fx-apply" data-act="amplify" disabled>Kazancı Uygula</button>
+        </div>
+
+        <div class="btn-grid" style="margin-top:12px">
+          <button class="btn tool" data-act="normalize" disabled>Normalleştir</button>
+        </div>
+      </section>
+
+      <section class="tool-group info-group">
+        <h3 class="tg-title">Dosya</h3>
+        <dl class="info">
+          <dt>Ad</dt><dd id="infName">—</dd>
+          <dt>Süre</dt><dd id="infDur">—</dd>
+          <dt>Örnekleme</dt><dd id="infRate">—</dd>
+          <dt>Kanal</dt><dd id="infCh">—</dd>
+        </dl>
+      </section>
+
+    </div>
+  </aside>
+</main>
+
+<!-- ============================= STATUS ============================= -->
+<footer class="statusbar">
+  <span class="st-branch">⎇ main</span>
+  <span id="stFile" class="st-file">dosya yok</span>
+  <span class="st-spacer"></span>
+  <span id="stSel" class="st-sel">seçim yok</span>
+  <span id="stCursor" class="st-cursor mono-sm">00:00.000</span>
+  <span class="st-eng">Web Audio · WAV</span>
+</footer>
+
+<input id="fileInput" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aac" hidden />
+<div id="toasts" class="toasts"></div>
+
+<script src="js/wav.js"></script>
+<script src="js/history.js"></script>
+<script src="js/audio-engine.js"></script>
+<script src="js/waveform.js"></script>
+<script src="js/app.js"></script>
