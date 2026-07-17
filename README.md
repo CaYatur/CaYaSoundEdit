@@ -1,11 +1,16 @@
 <div align="center">
 
+<img src="favicon.svg" alt="CaYaSound" width="96" height="96" />
+
 # 🎧 CaYaSound
 
 **Tarayıcıda çalışan ses düzenleyici — Adobe Audition tarzı dalga formu, sol/sağ kanal düzenleme, bas artırma ve WAV dışa aktarma.**
+_Browser-based audio editor — Audition-style waveform, L/R channel editing, bass boost & WAV export._
 
 [![Canlı Demo](https://img.shields.io/badge/Canl%C4%B1_Demo-GitHub_Pages-e51e2b?style=for-the-badge)](https://cayatur.github.io/CaYaSoundEdit/)
 [![CaYaDev](https://img.shields.io/badge/CaYaDev-cayadev.com-0b0608?style=for-the-badge)](https://cayadev.com)
+
+🌐 **Türkçe / English** — arayüz cihaz diline göre otomatik seçilir (algılanamazsa İngilizce), üstteki 🌐 düğmesiyle değiştirilebilir.
 
 </div>
 

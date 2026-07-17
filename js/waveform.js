@@ -234,13 +234,14 @@
       var x1 = this.sampleToX(sel.end);
       if (x1 < 0 || x0 > w) { /* görünmez */ } else {
         var cx0 = Math.max(0, x0), cx1 = Math.min(w, x1);
-        ctx.fillStyle = 'rgba(229,30,43,0.16)';
+        // Kırmızı dalgaya zıt, uyumlu camgöbeği (cyan) seçim vurgusu
+        ctx.fillStyle = 'rgba(55, 200, 224, 0.22)';
         ctx.fillRect(cx0, 0, cx1 - cx0, h);
-        ctx.strokeStyle = 'rgba(255,90,100,0.9)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#8beefb';
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        if (x0 >= 0 && x0 <= w) { ctx.moveTo(x0 + 0.5, 0); ctx.lineTo(x0 + 0.5, h); }
-        if (x1 >= 0 && x1 <= w) { ctx.moveTo(x1 + 0.5, 0); ctx.lineTo(x1 + 0.5, h); }
+        if (x0 >= 0 && x0 <= w) { ctx.moveTo(x0 + 1, 0); ctx.lineTo(x0 + 1, h); }
+        if (x1 >= 0 && x1 <= w) { ctx.moveTo(x1 - 1, 0); ctx.lineTo(x1 - 1, h); }
         ctx.stroke();
       }
     }

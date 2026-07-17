@@ -8,6 +8,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     var $ = function (id) { return document.getElementById(id); };
+    var t = CaYa.i18n.t;
 
     var engine = new CaYa.Engine();
     var hist = new CaYa.History(180 * 1024 * 1024);
@@ -35,8 +36,20 @@
       $('toasts').appendChild(t);
       setTimeout(function () { t.remove(); }, 3000);
     }
-    function busy(txt) { $('busyText').textContent = txt || 'İşleniyor…'; $('busy').hidden = false; }
+    function busy(txt) { $('busyText').textContent = txt || t('busy_processing'); $('busy').hidden = false; }
     function unbusy() { $('busy').hidden = true; }
+    var badgeTimer = null;
+    function showGainBadge(db, sel) {
+      var badge = $('fxBadge');
+      var x = wf.sampleToX((sel.start + sel.end) / 2);
+      if (x < 0) x = 0; if (x > wf.width) x = wf.width;
+      badge.textContent = (db > 0 ? '+' : '') + db + ' dB';
+      badge.style.left = x + 'px';
+      badge.hidden = false;
+      badge.style.animation = 'none'; void badge.offsetWidth; badge.style.animation = '';
+      if (badgeTimer) clearTimeout(badgeTimer);
+      badgeTimer = setTimeout(function () { badge.hidden = true; }, 1800);
+    }
     function download(blob, name) {
       var a = document.createElement('a');
       var url = URL.createObjectURL(blob);
@@ -60,19 +73,26 @@
     function updateSelStatus() {
       var s = state.selection, sr = engine.sampleRate || 44100;
       if (s && s.end > s.start) {
-        $('stSel').textContent = 'seçim ' + fmtTime(s.start / sr) + ' → ' + fmtTime(s.end / sr) +
-          '  (' + fmtTime((s.end - s.start) / sr) + ')';
+        $('stSel').textContent = t('st_sel', {
+          a: fmtTime(s.start / sr), b: fmtTime(s.end / sr), d: fmtTime((s.end - s.start) / sr)
+        });
       } else {
-        $('stSel').textContent = 'seçim yok';
+        $('stSel').textContent = t('st_no_sel');
       }
     }
     function updateInfo() {
-      $('infName').textContent = engine.name || '—';
-      $('infName').title = engine.name || '';
-      $('infDur').textContent = fmtTime(engine.duration());
-      $('infRate').textContent = engine.sampleRate + ' Hz';
-      $('infCh').textContent = engine.sourceChannels <= 1 ? '1 (mono → stereo)' : '2 (stereo)';
-      $('stFile').textContent = engine.name || 'dosya yok';
+      if (engine.hasAudio()) {
+        $('infName').textContent = engine.name || '—';
+        $('infName').title = engine.name || '';
+        $('infDur').textContent = fmtTime(engine.duration());
+        $('infRate').textContent = engine.sampleRate + ' Hz';
+        $('infCh').textContent = engine.sourceChannels <= 1 ? t('info_mono') : t('info_stereo');
+        $('stFile').textContent = engine.name;
+      } else {
+        $('infName').textContent = '—'; $('infName').title = '';
+        $('infDur').textContent = '—'; $('infRate').textContent = '—'; $('infCh').textContent = '—';
+        $('stFile').textContent = t('st_no_file');
+      }
     }
     function updateUndoRedo() {
       $('btnUndo').disabled = !hist.canUndo();
@@ -121,7 +141,7 @@
       if (engine.playing) stopPlayback();
       var snap = engine.snapshot();
       var res = fn();
-      if (res === false) { toast('err', 'İşlem uygulanamadı'); return; }
+      if (res === false) { toast('err', t('toast_op_fail')); return; }
       hist.record(snap);
       clampAfterEdit(resetCursor);
       afterEdit();
@@ -129,13 +149,13 @@
     function commitAsync(label, promiseFn) {
       if (engine.playing) stopPlayback();
       var snap = engine.snapshot();
-      busy(label + ' uygulanıyor…');
+      busy(t('busy_applying', { label: label }));
       promiseFn().then(function () {
         hist.record(snap);
         afterEdit();
-        toast('ok', label + ' uygulandı');
+        toast('ok', t('toast_applied', { label: label }));
       }).catch(function (e) {
-        toast('err', label + ' hatası: ' + (e && e.message ? e.message : e));
+        toast('err', t('toast_fx_err', { label: label, e: (e && e.message ? e.message : e) }));
       }).then(unbusy);
     }
 
@@ -189,7 +209,7 @@
     /* ---------- dosya açma ---------- */
     function openFile(file) {
       if (!file) return;
-      busy('“' + file.name + '” çözümleniyor…');
+      busy(t('busy_decoding', { name: file.name }));
       var reader = file.arrayBuffer ? file.arrayBuffer() : readAsArrayBuffer(file);
       reader.then(function (ab) {
         return engine.loadFile(ab, file.name);
@@ -200,9 +220,9 @@
         setLoaded();
         updateInfo(); updateSelStatus(); updateTime(null); updateUndoRedo(); paintOverlay();
         $('dropzone').classList.add('hide');
-        toast('ok', file.name + ' yüklendi');
+        toast('ok', t('toast_loaded', { name: file.name }));
       }).catch(function (e) {
-        toast('err', 'Dosya açılamadı: ' + (e && e.message ? e.message : e));
+        toast('err', t('toast_open_err', { e: (e && e.message ? e.message : e) }));
       }).then(unbusy);
     }
     function readAsArrayBuffer(file) {
@@ -230,14 +250,14 @@
         case 'selectAll': setSelection({ start: 0, end: engine.length }); break;
         case 'selectNone': setSelection(null); break;
         case 'trim':
-          if (!state.selection) { toast('err', 'Önce dalga üzerinde bir bölge seç'); break; }
+          if (!state.selection) { toast('err', t('toast_need_region')); break; }
           var st = state.selection;
           commit(function () { engine.trim(st.start, st.end); }, true);
           break;
         case 'delete':
-          if (!state.selection) { toast('err', 'Önce silinecek bölgeyi seç'); break; }
+          if (!state.selection) { toast('err', t('toast_need_del_region')); break; }
           var sd = state.selection;
-          if (sd.end - sd.start >= engine.length) { toast('err', 'Tümünü silemezsin'); break; }
+          if (sd.end - sd.start >= engine.length) { toast('err', t('toast_cant_del_all')); break; }
           commit(function () { engine.deleteRange(sd.start, sd.end); }, true);
           break;
         case 'silence': r = range(); commit(function () { engine.silenceRange(r[0], r[1]); }); break;
@@ -255,17 +275,21 @@
           commit(function () { return engine.normalize(-0.3, r[0], r[1]); });
           break;
         case 'amplify':
-          r = range();
-          var db = parseFloat($('ampRange').value) || 0;
-          commit(function () { engine.amplify(db, r[0], r[1]); });
+          // Kazanç yalnızca seçili bölgeye uygulanır (tümünü artırmaz).
+          if (!state.selection || state.selection.end <= state.selection.start) {
+            toast('err', t('toast_need_region_gain')); break;
+          }
+          var sg = state.selection, gdb = parseFloat($('ampRange').value) || 0;
+          commit(function () { engine.amplify(gdb, sg.start, sg.end); });
+          showGainBadge(gdb, sg);
           break;
         case 'bass':
-          commitAsync('Bas', function () {
+          commitAsync(t('label_bass'), function () {
             return engine.applyFilter('lowshelf', 200, parseFloat($('bassRange').value) || 0, 0);
           });
           break;
         case 'treble':
-          commitAsync('Tiz', function () {
+          commitAsync(t('label_treble'), function () {
             return engine.applyFilter('highshelf', 3200, parseFloat($('trebleRange').value) || 0, 0);
           });
           break;
@@ -296,9 +320,9 @@
         var blob = engine.exportWAV(depth);
         var base = (engine.name || 'ses').replace(/\.[^.]+$/, '');
         download(blob, base + '-cayasound.wav');
-        toast('ok', 'WAV dışa aktarıldı (' + (depth === 32 ? '32-bit float' : '16-bit PCM') + ')');
+        toast('ok', t('toast_exported', { fmt: (depth === 32 ? '32-bit float' : '16-bit PCM') }));
       } catch (e) {
-        toast('err', 'Dışa aktarma hatası: ' + e.message);
+        toast('err', t('toast_export_err', { e: e.message }));
       }
     }
 
@@ -331,6 +355,9 @@
     $('btnUndo').addEventListener('click', undo);
     $('btnRedo').addEventListener('click', redo);
     $('btnExport').addEventListener('click', exportWav);
+    $('btnLang').addEventListener('click', function () {
+      $('langLabel').textContent = CaYa.i18n.toggle().toUpperCase();
+    });
 
     // araç butonları
     var tools = document.querySelectorAll('[data-act]');
@@ -368,12 +395,28 @@
     window.addEventListener('drop', function (e) { e.preventDefault(); });
 
     /* ---------- klavye ---------- */
-    document.addEventListener('keydown', function (e) {
-      var tag = (e.target.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      var mod = e.ctrlKey || e.metaKey;
+    // Butona tıklayınca odağı bırak: Boşluk ve kısayollar her zaman çalışsın
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null;
+      if (b) b.blur();
+    });
 
-      if (e.code === 'Space') { e.preventDefault(); togglePlay(); return; }
+    document.addEventListener('keydown', function (e) {
+      var el = e.target, tag = (el.tagName || '').toUpperCase();
+      var typing = tag === 'TEXTAREA' || tag === 'SELECT' ||
+        (tag === 'INPUT' && el.type !== 'range') || el.isContentEditable;
+
+      // Boşluk = Oynat/Duraklat — odak nerede olursa olsun (metin kutuları hariç)
+      if (e.code === 'Space' || e.key === ' ' || e.keyCode === 32) {
+        if (typing) return;
+        e.preventDefault();
+        if (el && el.blur) el.blur();
+        togglePlay();
+        return;
+      }
+      if (typing) return;
+
+      var mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); exportWav(); return; }
@@ -383,6 +426,13 @@
       if (!mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); wf.zoomIn(); return; }
       if (!mod && e.key === '-') { e.preventDefault(); wf.zoomOut(); return; }
     });
+
+    // dil: cihaz diline göre; algılanamazsa İngilizce. Statik + dinamik metinleri kur.
+    CaYa.onLangChange = function () {
+      updateInfo(); updateSelStatus(); updateTime(null);
+      $('langLabel').textContent = CaYa.i18n.current().toUpperCase();
+    };
+    CaYa.i18n.apply(CaYa.i18n.detect());
 
     // ilk çizim (boş)
     wf.resize();
