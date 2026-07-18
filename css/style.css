@@ -287,38 +287,89 @@ body.is-playing .ico-pause { display: block; }
 .channel:last-of-type { border-bottom: 0; }
 .wave { display: block; width: 100%; height: 100%; }
 
+/* Kanal başlığı = tıklanabilir kilit düğmesi (solo/aç-kapa) */
 .ch-label {
-  position: absolute; top: 7px; left: 9px;
+  position: absolute; top: 7px; left: 9px; z-index: 4;
+  display: inline-flex; align-items: center; gap: 5px;
   font-family: var(--mono); font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.08em; color: var(--text-2);
-  background: rgba(0,0,0,0.45); border: 1px solid var(--border);
-  padding: 2px 7px; border-radius: 5px; pointer-events: none; z-index: 3;
+  background: rgba(0,0,0,0.5); border: 1px solid var(--border);
+  padding: 3px 8px; border-radius: 6px; cursor: pointer;
+  transition: color .14s, border-color .14s, background .14s, box-shadow .14s;
 }
-.channel.ch-muted .ch-label { color: var(--muted-2); border-color: var(--border); }
-.channel.ch-muted::after {
-  content: "KAPALI"; position: absolute; top: 7px; right: 9px;
-  font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
-  color: var(--red); background: rgba(229,30,43,.1); border: 1px solid var(--red-deep);
-  padding: 2px 7px; border-radius: 5px; pointer-events: none; z-index: 3;
+.ch-label:hover:not(:disabled) { color: #fff; border-color: var(--border-2); background: rgba(0,0,0,0.62); }
+.ch-label:disabled { cursor: default; }
+.ch-label .ch-lock { width: 12px; height: 12px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  opacity: .4; transition: opacity .14s, stroke .14s; }
+
+/* Solo modda ETKİN kanal başlığı vurgulanır (camgöbeği) */
+.channel.ch-active .ch-label {
+  color: var(--cyan); border-color: rgba(55,196,212,.55);
+  box-shadow: 0 0 0 1px rgba(55,196,212,.25), 0 0 12px -4px rgba(55,196,212,.5);
 }
+.channel.ch-active .ch-label .ch-lock { opacity: 0; } /* açık kanalda kilit gizli */
+
+/* KİLİTLİ kanal: dalga soluk + asma kilit + rozet */
+.channel.ch-locked .wave { opacity: .3; filter: grayscale(.5); }
+.channel.ch-locked .ch-label { color: var(--yellow); border-color: rgba(229,192,123,.5); background: rgba(229,192,123,.08); }
+.channel.ch-locked .ch-label .ch-lock { opacity: 1; stroke: var(--yellow); }
+.ch-lock-badge {
+  position: absolute; top: 7px; right: 9px; z-index: 4; display: none;
+  font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: 0.12em;
+  color: #2a1e05; background: linear-gradient(180deg, #f0d18a, var(--yellow));
+  border: 1px solid #b9954f; padding: 2px 7px; border-radius: 5px; pointer-events: none;
+}
+.channel.ch-locked .ch-lock-badge { display: block; }
 
 .overlay { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; cursor: text; }
 
-/* Seçili bölge üzerinde beliren dB rozeti (Kazanç) */
-.fx-badge {
-  position: absolute; top: 12px; z-index: 5; transform: translateX(-50%);
-  padding: 4px 11px; border-radius: 999px; pointer-events: none;
-  font-family: var(--mono); font-size: 13px; font-weight: 700; color: #062a30;
-  background: linear-gradient(180deg, #7fe9f5, var(--cyan));
-  border: 1px solid #2aa7b6; box-shadow: 0 6px 18px -6px rgba(55,196,212,.7);
-  white-space: nowrap; animation: badgePop .25s ease;
+/* ---- Kayan Kazanç tutamacı (seçim üzerinde belirir, dikey sürükle) ---- */
+.gain-handle {
+  position: absolute; top: 14px; z-index: 5;
+  transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 12px 0 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(28,20,26,.94), rgba(16,10,14,.94));
+  border: 1px solid var(--border-2);
+  box-shadow: 0 10px 26px -10px rgba(0,0,0,.8), 0 0 0 1px rgba(0,0,0,.3),
+              inset 0 1px 0 rgba(255,255,255,.06);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  cursor: ns-resize; user-select: none; touch-action: none;
+  color: var(--text-2); white-space: nowrap;
+  transition: border-color .14s, box-shadow .14s, transform .05s;
+  animation: ghPop .18s ease;
 }
-.fx-badge[hidden] { display: none; }
-.fx-badge::after {
-  content: ""; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%) rotate(45deg);
-  width: 8px; height: 8px; background: var(--cyan); border-right: 1px solid #2aa7b6; border-bottom: 1px solid #2aa7b6;
+.gain-handle[hidden] { display: none; }
+.gain-handle:hover,
+.gain-handle.dragging {
+  border-color: var(--cyan);
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,.85), 0 0 0 1px rgba(55,196,212,.35),
+              0 0 18px -4px rgba(55,196,212,.45);
 }
-@keyframes badgePop { from { opacity: 0; transform: translateX(-50%) translateY(6px) scale(.9); } }
+.gain-handle.dragging { transform: translateX(-50%) scale(1.03); }
+
+.gain-handle .gh-ico { width: 16px; height: 16px; flex: 0 0 auto;
+  fill: none; stroke: var(--cyan); stroke-width: 2; stroke-linecap: round; opacity: .9; }
+
+.gain-handle .gh-grip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; flex: 0 0 auto;
+  background: radial-gradient(circle at 50% 35%, #2a1e26, #140d12);
+  border: 1px solid var(--border-2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+}
+.gain-handle .gh-grip svg { width: 15px; height: 15px; fill: var(--muted); }
+.gain-handle:hover .gh-grip svg,
+.gain-handle.dragging .gh-grip svg { fill: var(--cyan); }
+
+.gain-handle .gh-val {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: .01em; color: var(--cyan); min-width: 58px; text-align: center;
+  text-shadow: 0 0 10px rgba(55,196,212,.25);
+}
+@keyframes ghPop { from { opacity: 0; transform: translateX(-50%) translateY(-5px); } }
 
 /* horizontal scrollbar */
 .hbar { height: 12px; background: var(--bg-1); border-top: 1px solid var(--border);
@@ -395,11 +446,18 @@ body.is-playing .ico-pause { display: block; }
 .fx-row .range { margin-bottom: 9px; }
 .fx-apply { width: 100%; }
 .fx-note { margin: -4px 0 16px; font-size: 11px; color: var(--muted); }
-.fx-gain { margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border); }
-.fx-gain .range { background: linear-gradient(90deg, #1c6f7a, var(--cyan)); }
-.fx-gain .range::-webkit-slider-thumb { border-color: var(--cyan); box-shadow: 0 0 8px rgba(55,196,212,.5); }
-.fx-gain .range::-moz-range-thumb { border-color: var(--cyan); }
-.fx-gain .fx-note { margin-bottom: 0; }
+.fx-gain-note {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.fx-gain-note .tg-hint { margin: 0; }
+.fx-gain-badge {
+  flex: 0 0 auto; margin-top: 1px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
+  color: #062a30; background: linear-gradient(180deg, #7fe9f5, var(--cyan));
+  border: 1px solid #2aa7b6; border-radius: 5px; padding: 2px 6px;
+  box-shadow: 0 0 12px -4px rgba(55,196,212,.6);
+}
 
 .info-group { border-top: 1px solid var(--border); padding-top: 16px; }
 .info { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 12.5px; }

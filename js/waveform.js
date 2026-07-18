@@ -28,6 +28,7 @@
 
     this.onSeek = o.onSeek || function () {};
     this.onSelect = o.onSelect || function () {};
+    this.onView = o.onView || function () {};   // görünüm (zoom/kaydırma/boyut) değişince
 
     this.rctx = this.ruler.getContext('2d');
     this.lctx = this.cL.getContext('2d');
@@ -221,6 +222,9 @@
     this._drawRuler();
     this._drawWave(this.lctx, this.channels ? this.channels[0] : null, this.hCh);
     this._drawWave(this.rrctx, this.channels ? this.channels[1] : null, this.hCh);
+    // Zoom/kaydırma/boyut değişimlerinin tamamı draw()'dan geçer:
+    // kayan tutamak konumunu tek noktadan güncellemek için buradan haber ver.
+    this.onView();
   };
 
   /* ---------- bindirme (imleç / seçim / oynatma) ---------- */

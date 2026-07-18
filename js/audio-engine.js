@@ -25,6 +25,7 @@
     this.length = 0;           // örnek/kare sayısı
     this.sourceChannels = 0;   // kaynak dosyanın kanal sayısı
     this.name = '';
+    this.active = [true, true]; // düzenlenebilir kanallar (kilitli = false → işlemler atlar)
 
     this.volume = 1;
     this.source = null;
@@ -180,12 +181,14 @@
     this.channels = out;
     this.length = keep;
   };
+  // Bölge/efekt işlemleri yalnızca ETKİN (kilitli olmayan) kanallara uygulanır.
   Engine.prototype.silenceRange = function (start, end) {
-    this.channels[0].fill(0, start, end);
-    this.channels[1].fill(0, start, end);
+    if (this.active[0]) this.channels[0].fill(0, start, end);
+    if (this.active[1]) this.channels[1].fill(0, start, end);
   };
   Engine.prototype.reverseRange = function (start, end) {
     for (var c = 0; c < 2; c++) {
+      if (!this.active[c]) continue;
       var a = this.channels[c];
       for (var i = start, j = end - 1; i < j; i++, j--) { var t = a[i]; a[i] = a[j]; a[j] = t; }
     }
@@ -194,6 +197,7 @@
     var n = end - start;
     if (n < 2) return;
     for (var c = 0; c < 2; c++) {
+      if (!this.active[c]) continue;
       var a = this.channels[c];
       for (var i = 0; i < n; i++) {
         var t = i / (n - 1);
@@ -206,22 +210,50 @@
   Engine.prototype.amplify = function (db, start, end) {
     var g = Math.pow(10, db / 20);
     for (var c = 0; c < 2; c++) {
+      if (!this.active[c]) continue;
       var a = this.channels[c];
       for (var i = start; i < end; i++) a[i] *= g;
+    }
+  };
+  // Kazanç tutamacı (canlı önizleme) için: bölgeyi HER seferinde taban
+  // kopyadan yeniden türet — böylece birikmez ve serbest bırakınca tam
+  // olarak tek bir geri-al adımı olur. base = [Float32Array L, R] (bölge dilimi).
+  Engine.prototype.setRegionGain = function (base, start, end, db) {
+    var g = Math.pow(10, db / 20);
+    for (var c = 0; c < 2; c++) {
+      if (!this.active[c]) continue;
+      var a = this.channels[c], b = base[c];
+      for (var i = start, j = 0; i < end; i++, j++) a[i] = b[j] * g;
     }
   };
   Engine.prototype.normalize = function (targetDb, start, end) {
     var target = Math.pow(10, (targetDb == null ? -0.3 : targetDb) / 20);
     var peak = 0;
     for (var c = 0; c < 2; c++) {
+      if (!this.active[c]) continue;
       var a = this.channels[c];
       for (var i = start; i < end; i++) { var v = Math.abs(a[i]); if (v > peak) peak = v; }
     }
     if (peak <= 1e-9) return false;
     var g = target / peak;
     for (var d = 0; d < 2; d++) {
+      if (!this.active[d]) continue;
       var b = this.channels[d];
       for (var k = start; k < end; k++) b[k] *= g;
+    }
+    return true;
+  };
+  // Bir kanalın bölgesini panodan üzerine yaz (uzunluk değişmez). targets =
+  // yazılacak kanal indeksleri; data = kaynak dilimler (kanal sayısı farklıysa döner).
+  Engine.prototype.pasteOverwrite = function (data, pos, targets) {
+    if (!data.length || !targets.length) return false;
+    var len = data[0].length;
+    var end = Math.min(this.length, pos + len);
+    if (end <= pos) return false;
+    for (var i = 0; i < targets.length; i++) {
+      var a = this.channels[targets[i]];
+      var src = data[i % data.length];
+      for (var j = 0, p = pos; p < end; j++, p++) a[p] = src[j];
     }
     return true;
   };
@@ -246,7 +278,9 @@
     src.start();
 
     return off.startRendering().then(function (rendered) {
-      self.channels = [rendered.getChannelData(0).slice(), rendered.getChannelData(1).slice()];
+      // Yalnızca etkin kanalları yaz; kilitli kanal olduğu gibi kalır.
+      if (self.active[0]) self.channels[0] = rendered.getChannelData(0).slice();
+      if (self.active[1]) self.channels[1] = rendered.getChannelData(1).slice();
       return self;
     });
   };

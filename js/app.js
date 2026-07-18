@@ -17,10 +17,11 @@
       ruler: $('ruler'), waveL: $('waveL'), waveR: $('waveR'), overlay: $('overlay'),
       scrollHost: $('waveScroll'), hbar: $('hbar'), hbarThumb: $('hbarThumb'),
       onSeek: function (sample) { setCursor(sample); },
-      onSelect: function (sel) { setSelection(sel); }
+      onSelect: function (sel) { setSelection(sel); },
+      onView: function () { positionGainHandle(); }
     });
 
-    var state = { cursor: 0, selection: null, playFrom: 0, raf: null };
+    var state = { cursor: 0, selection: null, playFrom: 0, raf: null, clipboard: null };
 
     /* ---------- yardımcılar ---------- */
     function fmtTime(sec) {
@@ -38,18 +39,6 @@
     }
     function busy(txt) { $('busyText').textContent = txt || t('busy_processing'); $('busy').hidden = false; }
     function unbusy() { $('busy').hidden = true; }
-    var badgeTimer = null;
-    function showGainBadge(db, sel) {
-      var badge = $('fxBadge');
-      var x = wf.sampleToX((sel.start + sel.end) / 2);
-      if (x < 0) x = 0; if (x > wf.width) x = wf.width;
-      badge.textContent = (db > 0 ? '+' : '') + db + ' dB';
-      badge.style.left = x + 'px';
-      badge.hidden = false;
-      badge.style.animation = 'none'; void badge.offsetWidth; badge.style.animation = '';
-      if (badgeTimer) clearTimeout(badgeTimer);
-      badgeTimer = setTimeout(function () { badge.hidden = true; }, 1800);
-    }
     function download(blob, name) {
       var a = document.createElement('a');
       var url = URL.createObjectURL(blob);
@@ -105,6 +94,7 @@
       updateTime(null); paintOverlay();
     }
     function setSelection(sel) {
+      commitGain(); endGainRun();  // seçim değişmeden önce bekleyeni kesinleştir, seriyi bitir
       if (sel && sel.end > sel.start) {
         state.selection = {
           start: Math.max(0, Math.min(engine.length, sel.start)),
@@ -113,7 +103,7 @@
       } else {
         state.selection = null;
       }
-      updateSelStatus(); paintOverlay();
+      updateSelStatus(); paintOverlay(); positionGainHandle();
     }
     function clampAfterEdit(structural) {
       if (structural) {
@@ -132,12 +122,195 @@
       return [0, engine.length];
     }
 
+    /* ---------- kayan Kazanç tutamacı ----------
+       Seçim üzerinde belirir; dikey sürükleyerek (veya tekerlekle) kazanç
+       uygulanır. Bir "hareket" (basılı-sürükle ya da tekerlek serisi) TEK
+       geçmiş adımıdır: önizleme her karede taban dilimden yeniden türetilir
+       (birikmez), bırakınca yalnızca bir kez kaydedilir. Böylece Ctrl+Z tek
+       adımda tam olarak geri döner. */
+    var ghEl = $('gainHandle'), ghVal = $('gainHandleVal');
+    var GAIN_MAX = 24;
+    var gain = null;         // etkin oturum: { base:[L,R], start, end, db, raf, wheelTimer }
+    var gainRun = null;      // aynı seçimde art arda kazançları TEK geçmiş adımında birleştir
+    function endGainRun() { gainRun = null; } // başka bir işlem seriyi bozar
+
+    function fmtDb(db) {
+      var r = Math.round(db * 10) / 10;
+      if (r === 0) r = 0; // -0'ı normalle
+      return (r >= 0 ? '+' : '') + r.toFixed(1) + ' dB';
+    }
+    function positionGainHandle() {
+      var s = state.selection;
+      if (!engine.hasAudio() || !s || s.end <= s.start) { ghEl.hidden = true; return; }
+      var x0 = wf.sampleToX(s.start), x1 = wf.sampleToX(s.end);
+      if (x1 < 0 || x0 > wf.width) { ghEl.hidden = true; return; } // seçim görünmüyor
+      var mid = (Math.max(0, x0) + Math.min(wf.width, x1)) / 2;
+      ghEl.hidden = false;
+      var half = (ghEl.offsetWidth || 120) / 2, pad = 6;
+      var cx = Math.max(half + pad, Math.min(wf.width - half - pad, mid));
+      ghEl.style.left = cx + 'px';
+      if (!gain) ghVal.textContent = fmtDb(0);
+    }
+    function beginGain() {
+      commitGain(); // varsa önceki oturumu kesinleştir
+      var s = state.selection;
+      if (!engine.hasAudio() || !s || s.end <= s.start) return false;
+      if (engine.playing) stopPlayback();
+      // Yalnızca bölgenin taban kopyasını sakla (tüm klibin değil): hareket
+      // yalnızca [start,end] aralığını değiştirir; geçmiş anlık görüntüsü
+      // gerekirse commit anında bundan yeniden kurulur (boşa kopya yok).
+      gain = {
+        base: [engine.channels[0].slice(s.start, s.end), engine.channels[1].slice(s.start, s.end)],
+        start: s.start, end: s.end, db: 0, raf: 0, wheelTimer: 0
+      };
+      ghEl.classList.add('dragging');
+      return true;
+    }
+    function renderGain() {
+      if (!gain) return;
+      gain.raf = 0;
+      engine.setRegionGain(gain.base, gain.start, gain.end, gain.db);
+      wf.draw(); // wf.channels === engine.channels → yerinde yazım anında görünür
+    }
+    function updateGain(db) {
+      if (!gain) return;
+      if (db > GAIN_MAX) db = GAIN_MAX; else if (db < -GAIN_MAX) db = -GAIN_MAX;
+      gain.db = db;
+      ghVal.textContent = fmtDb(db);
+      ghEl.setAttribute('aria-valuenow', Math.round(db));
+      if (!gain.raf) gain.raf = requestAnimationFrame(renderGain);
+    }
+    function commitGain() {
+      if (!gain) return;
+      var g = gain; gain = null; // yeniden-giriş güvenliği: önce temizle
+      if (g.wheelTimer) clearTimeout(g.wheelTimer);
+      if (g.raf) cancelAnimationFrame(g.raf);
+      ghEl.classList.remove('dragging');
+      var db = Math.round(g.db * 10) / 10;
+      engine.setRegionGain(g.base, g.start, g.end, db); // son durumu kesinleştir
+      ghVal.textContent = fmtDb(0); // baklandı → tutamak yine +0'da bekler
+      if (db === 0) { wf.setChannels(engine.channels); return; } // net değişiklik yok
+      // Aynı seçimde art arda kazanç: yalnızca İLK hareket geçmişe yazılır.
+      // Sonrakiler o anlık görüntüyü korur → tek Ctrl+Z serinin tamamını geri alır.
+      if (gainRun && gainRun.start === g.start && gainRun.end === g.end) {
+        afterEdit();
+      } else {
+        // Hareket öncesi durumu yeniden kur: mevcut klip + bölgeye taban dilimi.
+        var snap = engine.snapshot();
+        snap.channels[0].set(g.base[0], g.start);
+        snap.channels[1].set(g.base[1], g.start);
+        hist.record(snap);
+        gainRun = { start: g.start, end: g.end };
+        afterEdit();
+      }
+      toast('ok', t('toast_gain_applied', { db: (db > 0 ? '+' : '') + db }));
+    }
+
+    (function bindGainHandle() {
+      var dragging = false, startY = 0, startDb = 0, fine = false;
+      function down(e) {
+        if (e.button != null && e.button !== 0) return; // sadece sol tuş
+        if (!beginGain()) return;
+        dragging = true; startY = e.clientY; startDb = gain.db; fine = e.shiftKey;
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        e.preventDefault(); e.stopPropagation();
+      }
+      function move(e) {
+        if (!dragging || !gain) return;
+        var sens = fine ? 0.05 : 0.2;      // dB / piksel
+        updateGain(startDb + (startY - e.clientY) * sens); // yukarı = artı
+        e.preventDefault();
+      }
+      function up() {
+        dragging = false;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        commitGain();
+      }
+      ghEl.addEventListener('pointerdown', down);
+
+      // Tekerlek: ±1 dB; kısa boşluktan sonra tek geçmiş adımı olarak kaydet
+      ghEl.addEventListener('wheel', function (e) {
+        if (!engine.hasAudio() || !state.selection) return;
+        if (!gain && !beginGain()) return;
+        updateGain(gain.db + (e.deltaY < 0 ? 1 : -1));
+        if (gain.wheelTimer) clearTimeout(gain.wheelTimer);
+        gain.wheelTimer = setTimeout(commitGain, 500);
+        e.preventDefault(); e.stopPropagation();
+      }, { passive: false });
+
+      // Çift tık: bekleyen ayarı sıfırla
+      ghEl.addEventListener('dblclick', function (e) {
+        if (gain) updateGain(0);
+        e.preventDefault();
+      });
+    })();
+
+    /* ---------- kanal kilidi (solo) + pano ----------
+       Kanal başlığına tıkla → yalnız o kanal düzenlenir (solo), diğeri kilitlenir;
+       aynı başlığa tekrar tıkla → iki kanal da açılır. Bölge/efekt işlemleri ve
+       Kopyala/Yapıştır yalnızca ETKİN kanallara uygulanır. Böylece bir kanalı
+       kopyalayıp diğerini açıp yapıştırarak sesi kanaldan kanala taşıyabilirsin. */
+    var chanEls = [$('chanL'), $('chanR')];
+    var btnPaste = document.querySelector('[data-act="paste"]');
+    function updateChannelUI() {
+      var a = engine.active, solo = a[0] !== a[1];
+      for (var c = 0; c < 2; c++) {
+        chanEls[c].classList.toggle('ch-locked', !a[c]);
+        chanEls[c].classList.toggle('ch-active', a[c] && solo);
+        var lbl = chanEls[c].querySelector('.ch-label');
+        if (lbl) lbl.setAttribute('aria-pressed', String(!a[c]));
+      }
+    }
+    function toggleChannel(ch) {
+      if (!engine.hasAudio()) return;
+      commitGain(); endGainRun(); // sürüklenen kazanç varsa önce kesinleştir
+      var a = engine.active;
+      var soloThis = a[ch] && !a[ch ^ 1];          // ch şu an tek etkin kanal mı
+      engine.active = soloThis ? [true, true]      // → iki kanalı da aç
+                    : (ch === 0 ? [true, false] : [false, true]); // → yalnız ch etkin
+      updateChannelUI();
+    }
+    function refreshPaste() { if (btnPaste) btnPaste.disabled = !engine.hasAudio() || !state.clipboard; }
+    function activeChannels() {
+      var t = [];
+      for (var c = 0; c < 2; c++) if (engine.active[c]) t.push(c);
+      return t;
+    }
+    function doCopy() {
+      if (!engine.hasAudio()) return;
+      var r = range(), data = [], t2 = activeChannels();
+      for (var i = 0; i < t2.length; i++) data.push(engine.channels[t2[i]].slice(r[0], r[1]));
+      if (!data.length) return;
+      state.clipboard = { data: data };
+      refreshPaste();
+      toast('ok', t('toast_copied', { n: data.length }));
+    }
+    function doPaste() {
+      if (!engine.hasAudio()) return;
+      if (!state.clipboard) { toast('err', t('toast_paste_empty')); return; }
+      var targets = activeChannels();
+      if (!targets.length) return;
+      var pos = (state.selection && state.selection.end > state.selection.start)
+        ? state.selection.start : state.cursor;
+      if (pos >= engine.length) { toast('err', t('toast_paste_pos')); return; }
+      var cb = state.clipboard;
+      commit(function () { engine.pasteOverwrite(cb.data, pos, targets); });
+      toast('ok', t('toast_pasted'));
+    }
+    function writesLocked(chs) {
+      for (var i = 0; i < chs.length; i++) if (!engine.active[chs[i]]) return true;
+      return false;
+    }
+
     /* ---------- düzenleme commit ---------- */
     function afterEdit() {
       wf.setChannels(engine.channels);
       updateUndoRedo(); updateInfo(); updateSelStatus(); updateTime(null); paintOverlay();
     }
     function commit(fn, resetCursor) {
+      commitGain(); endGainRun();
       if (engine.playing) stopPlayback();
       var snap = engine.snapshot();
       var res = fn();
@@ -147,6 +320,7 @@
       afterEdit();
     }
     function commitAsync(label, promiseFn) {
+      commitGain(); endGainRun();
       if (engine.playing) stopPlayback();
       var snap = engine.snapshot();
       busy(t('busy_applying', { label: label }));
@@ -184,6 +358,7 @@
     }
     function togglePlay() {
       if (!engine.hasAudio()) return;
+      commitGain();
       if (engine.playing) {
         state.cursor = Math.round(engine.getPlayheadSample());
         engine.stop(); setPlaying(false);
@@ -209,6 +384,7 @@
     /* ---------- dosya açma ---------- */
     function openFile(file) {
       if (!file) return;
+      commitGain(); endGainRun();
       busy(t('busy_decoding', { name: file.name }));
       var reader = file.arrayBuffer ? file.arrayBuffer() : readAsArrayBuffer(file);
       reader.then(function (ab) {
@@ -216,8 +392,10 @@
       }).then(function () {
         hist.clear();
         state.cursor = 0; state.selection = null;
+        engine.active = [true, true]; state.clipboard = null; // kilit + pano sıfırla
         wf.setData(engine.channels, engine.sampleRate);
         setLoaded();
+        updateChannelUI(); refreshPaste();
         updateInfo(); updateSelStatus(); updateTime(null); updateUndoRedo(); paintOverlay();
         $('dropzone').classList.add('hide');
         toast('ok', t('toast_loaded', { name: file.name }));
@@ -236,8 +414,8 @@
 
     /* ---------- kontrolleri etkinleştir ---------- */
     function setLoaded() {
-      var sel = '.tool, .fx-apply, #btnExport, #btnStart, #btnPlay, #btnStop, ' +
-        '#btnZoomIn, #btnZoomOut, #btnZoomFit, #bassRange, #trebleRange, #ampRange';
+      var sel = '.tool, .fx-apply, .ch-label, #btnExport, #btnStart, #btnPlay, #btnStop, ' +
+        '#btnZoomIn, #btnZoomOut, #btnZoomFit, #bassRange, #trebleRange';
       var els = document.querySelectorAll(sel);
       for (var i = 0; i < els.length; i++) els[i].disabled = false;
     }
@@ -264,24 +442,30 @@
         case 'reverse': r = range(); commit(function () { engine.reverseRange(r[0], r[1]); }); break;
         case 'fadeIn': r = range(); commit(function () { engine.fade(r[0], r[1], 'in'); }); break;
         case 'fadeOut': r = range(); commit(function () { engine.fade(r[0], r[1], 'out'); }); break;
-        case 'copyLR': commit(function () { engine.copyChannel(0, 1); }); break;
-        case 'copyRL': commit(function () { engine.copyChannel(1, 0); }); break;
-        case 'swap': commit(function () { engine.swap(); }); break;
-        case 'mono': commit(function () { engine.mono(); }); break;
-        case 'muteL': commit(function () { engine.silenceChannel(0); }); break;
-        case 'muteR': commit(function () { engine.silenceChannel(1); }); break;
+        case 'copy': doCopy(); break;
+        case 'paste': doPaste(); break;
+        // Kanal yönlendirme işlemleri kilitli hedef kanala yazamaz.
+        case 'copyLR':
+          if (writesLocked([1])) { toast('err', t('toast_target_locked')); break; }
+          commit(function () { engine.copyChannel(0, 1); }); break;
+        case 'copyRL':
+          if (writesLocked([0])) { toast('err', t('toast_target_locked')); break; }
+          commit(function () { engine.copyChannel(1, 0); }); break;
+        case 'swap':
+          if (writesLocked([0, 1])) { toast('err', t('toast_target_locked')); break; }
+          commit(function () { engine.swap(); }); break;
+        case 'mono':
+          if (writesLocked([0, 1])) { toast('err', t('toast_target_locked')); break; }
+          commit(function () { engine.mono(); }); break;
+        case 'muteL':
+          if (writesLocked([0])) { toast('err', t('toast_target_locked')); break; }
+          commit(function () { engine.silenceChannel(0); }); break;
+        case 'muteR':
+          if (writesLocked([1])) { toast('err', t('toast_target_locked')); break; }
+          commit(function () { engine.silenceChannel(1); }); break;
         case 'normalize':
           r = range();
           commit(function () { return engine.normalize(-0.3, r[0], r[1]); });
-          break;
-        case 'amplify':
-          // Kazanç yalnızca seçili bölgeye uygulanır (tümünü artırmaz).
-          if (!state.selection || state.selection.end <= state.selection.start) {
-            toast('err', t('toast_need_region_gain')); break;
-          }
-          var sg = state.selection, gdb = parseFloat($('ampRange').value) || 0;
-          commit(function () { engine.amplify(gdb, sg.start, sg.end); });
-          showGainBadge(gdb, sg);
           break;
         case 'bass':
           commitAsync(t('label_bass'), function () {
@@ -298,6 +482,7 @@
 
     /* ---------- geçmiş ---------- */
     function undo() {
+      commitGain(); endGainRun();
       if (engine.playing) stopPlayback();
       var prev = hist.undo(engine.snapshot());
       if (!prev) return;
@@ -305,6 +490,7 @@
       clampAfterEdit(false); afterEdit();
     }
     function redo() {
+      commitGain(); endGainRun();
       if (engine.playing) stopPlayback();
       var next = hist.redo(engine.snapshot());
       if (!next) return;
@@ -315,6 +501,7 @@
     /* ---------- dışa aktarma ---------- */
     function exportWav() {
       if (!engine.hasAudio()) return;
+      commitGain();
       var depth = parseInt($('fmtSelect').value, 10);
       try {
         var blob = engine.exportWAV(depth);
@@ -367,15 +554,22 @@
       })(tools[i]);
     }
 
+    // kanal başlıkları = kilit (solo) düğmesi
+    var chLabels = document.querySelectorAll('.ch-label');
+    for (var ci = 0; ci < chLabels.length; ci++) {
+      (function (b) {
+        b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); // seçim başlatma
+        b.addEventListener('click', function () { toggleChannel(parseInt(b.getAttribute('data-ch'), 10)); });
+      })(chLabels[ci]);
+    }
+
     // efekt kaydırıcı etiketleri
     function sign(v) { return (v > 0 ? '+' : '') + v; }
     $('bassRange').addEventListener('input', function (e) { $('bassVal').textContent = sign(e.target.value) + ' dB'; });
     $('trebleRange').addEventListener('input', function (e) { $('trebleVal').textContent = sign(e.target.value) + ' dB'; });
-    $('ampRange').addEventListener('input', function (e) { $('ampVal').textContent = sign(e.target.value) + ' dB'; });
     // başlangıç etiketleri
     $('bassVal').textContent = sign($('bassRange').value) + ' dB';
     $('trebleVal').textContent = sign($('trebleRange').value) + ' dB';
-    $('ampVal').textContent = sign($('ampRange').value) + ' dB';
 
     /* ---------- sürükle-bırak ---------- */
     var dz = $('dropzone'), ww = $('waveWrap');
@@ -421,6 +615,8 @@
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); exportWav(); return; }
       if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); if (engine.hasAudio()) setSelection({ start: 0, end: engine.length }); return; }
+      if (mod && e.key.toLowerCase() === 'c') { e.preventDefault(); doAct('copy'); return; }
+      if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); doAct('paste'); return; }
       if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); doAct('delete'); return; }
       if (e.key === 'Home') { e.preventDefault(); stopPlayback(); setCursor(0); return; }
       if (!mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); wf.zoomIn(); return; }
@@ -437,7 +633,8 @@
     // ilk çizim (boş)
     wf.resize();
     updateTime(null);
+    updateChannelUI();
     // hata ayıklama / test için dışa ver
-    CaYa.app = { engine: engine, wf: wf, hist: hist, state: state, openFile: openFile, doAct: doAct, exportWav: exportWav };
+    CaYa.app = { engine: engine, wf: wf, hist: hist, state: state, openFile: openFile, doAct: doAct, exportWav: exportWav, toggleChannel: toggleChannel };
   });
 })(window.CaYa = window.CaYa || {});

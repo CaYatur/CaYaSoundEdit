@@ -96,16 +96,44 @@
       <div id="waveScroll" class="wave-scroll">
         <canvas id="ruler" class="ruler"></canvas>
         <div id="channels" class="channels">
-          <div class="channel">
-            <span class="ch-label" data-i18n="ch_left">SOL · L</span>
+          <div class="channel" id="chanL">
+            <button class="ch-label" type="button" data-ch="0" disabled
+                    data-i18n-title="ch_lock_t" title="Kanalı kilitle / aç">
+              <svg class="ch-lock" viewBox="0 0 24 24" aria-hidden="true">
+                <rect class="lk-body" x="5" y="11" width="14" height="9" rx="2"/>
+                <path class="lk-shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/>
+              </svg>
+              <span data-i18n="ch_left">SOL · L</span>
+            </button>
+            <span class="ch-lock-badge" data-i18n="ch_locked">KİLİTLİ</span>
             <canvas id="waveL" class="wave"></canvas>
           </div>
-          <div class="channel">
-            <span class="ch-label" data-i18n="ch_right">SAĞ · R</span>
+          <div class="channel" id="chanR">
+            <button class="ch-label" type="button" data-ch="1" disabled
+                    data-i18n-title="ch_lock_t" title="Kanalı kilitle / aç">
+              <svg class="ch-lock" viewBox="0 0 24 24" aria-hidden="true">
+                <rect class="lk-body" x="5" y="11" width="14" height="9" rx="2"/>
+                <path class="lk-shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/>
+              </svg>
+              <span data-i18n="ch_right">SAĞ · R</span>
+            </button>
+            <span class="ch-lock-badge" data-i18n="ch_locked">KİLİTLİ</span>
             <canvas id="waveR" class="wave"></canvas>
           </div>
           <canvas id="overlay" class="overlay"></canvas>
-          <div id="fxBadge" class="fx-badge" hidden></div>
+
+          <!-- Kayan Kazanç tutamacı: seçim üzerinde belirir, dikey sürükle -->
+          <div id="gainHandle" class="gain-handle" hidden role="slider"
+               aria-label="Kazanç" aria-valuemin="-24" aria-valuemax="24" aria-valuenow="0"
+               data-i18n-title="gain_handle_t" title="Sürükle: kazanç · tekerlek: ince ayar">
+            <svg class="gh-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20V11M9 20V6M14 20v-7M19 20V9"/>
+            </svg>
+            <span class="gh-grip" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 4 8.5 8h7zM12 20l3.5-4h-7z"/></svg>
+            </span>
+            <span id="gainHandleVal" class="gh-val">+0.0 dB</span>
+          </div>
         </div>
       </div>
 
@@ -148,12 +176,15 @@
           <button class="btn tool" data-act="reverse" disabled data-i18n="act_reverse">Ters Çevir</button>
           <button class="btn tool" data-act="fadeIn" disabled data-i18n="act_fadeIn">Fade In</button>
           <button class="btn tool" data-act="fadeOut" disabled data-i18n="act_fadeOut">Fade Out</button>
+          <button class="btn tool" data-act="copy" disabled data-i18n="act_copy">Kopyala</button>
+          <button class="btn tool" data-act="paste" disabled data-i18n="act_paste">Yapıştır</button>
         </div>
       </section>
 
       <section class="tool-group">
         <h3 class="tg-title" data-i18n="ch_title">Kanallar</h3>
         <p class="tg-hint" data-i18n="ch_hint">Sol/sağ kanal işlemleri (tüm klip).</p>
+        <p class="tg-hint ch-lock-hint" data-i18n="ch_lock_hint">İpucu: dalga üzerindeki <b>SOL</b> / <b>SAĞ</b> başlığına tıkla → yalnız o kanal düzenlenir (diğeri kilitlenir). Bir kanalı kopyalayıp diğerine yapıştırarak sesi taşıyabilirsin.</p>
         <div class="btn-grid">
           <button class="btn tool" data-act="copyLR" disabled data-i18n="act_copyLR">Sol → Sağ Kopyala</button>
           <button class="btn tool" data-act="copyRL" disabled data-i18n="act_copyRL">Sağ → Sol Kopyala</button>
@@ -180,11 +211,9 @@
         </div>
         <p class="tg-hint fx-note" data-i18n="fx_tone_hint">Bas ve tiz tüm klibe uygulanır.</p>
 
-        <div class="fx-row fx-gain">
-          <label><span data-i18n="fx_gain">Kazanç</span> <span id="ampVal" class="mono-sm">+0 dB</span></label>
-          <input id="ampRange" class="range" type="range" min="-24" max="24" value="3" step="1" disabled />
-          <button class="btn tool fx-apply" data-act="amplify" disabled data-i18n="fx_gain_apply">Kazancı Uygula</button>
-          <p class="tg-hint fx-note" data-i18n="fx_gain_hint">Kazanç yalnızca seçili bölgeye uygulanır.</p>
+        <div class="fx-gain-note">
+          <span class="fx-gain-badge">dB</span>
+          <p class="tg-hint" data-i18n="fx_gain_moved">Kazanç için dalga üzerinde bir bölge seç ve beliren tutamacı yukarı/aşağı sürükle.</p>
         </div>
 
         <div class="btn-grid" style="margin-top:12px">
